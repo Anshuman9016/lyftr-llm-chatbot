@@ -57,7 +57,7 @@ pip install -r requirements.txt -r requirements-dev.txt
 export LLM_API_KEYS="key-one,key-two" ENABLE_FAILURE_SIMULATION=true \
        DATABASE_URL="sqlite:///./app.db" ALLOWED_ORIGINS="http://localhost:3000"
 uvicorn app.main:app --reload --port 8000
-python -m pytest -q                                    # 38 tests, no network or real keys needed
+python -m pytest -q                                    # 40 tests, no network or real keys needed
 
 # frontend (Node 18+), in another terminal
 cd frontend
@@ -90,18 +90,23 @@ VITE_API_URL=http://localhost:8000 npm run dev         # http://localhost:3000
   model, so the pool can span providers (e.g. Gemini + Groq). This matters because **Gemini quotas
   are per Google Cloud project, not per key**: two keys from one project share one quota. Use keys
   from different projects or different providers for real redundancy.
-- `LLMGateway.chat` walks the pool in order and calls `litellm.acompletion(..., api_key=…, num_retries=0)`.
-  Any provider failure — `RateLimitError` (429 and quota/`RESOURCE_EXHAUSTED`), `InternalServerError`,
-  `BadGatewayError`, `ServiceUnavailableError`, timeouts, connection errors, even an invalid key or
-  an empty reply — moves to the next key. LiteLLM normalises every provider's errors into these
-  exception types, so one code path handles Gemini, Groq, OpenAI, etc.
-- I drive the loop myself instead of using LiteLLM's `Router` retries so the response can report
-  exactly which key answered (`key_id`) and how many failed first (`fallback_attempts`), and so the
-  test hook can fail a specific key for one request without touching shared router state
-  (cooldowns would leak into other users' requests).
-- `X-Simulate-Failure` raises the **same LiteLLM exception** a real provider error would
-  (`RateLimitError` for 429, `InternalServerError` for 500, …) for the listed keys, inside that request
-  only. It is ignored unless `ENABLE_FAILURE_SIMULATION=true`. A simulated key is never called.
+- Failover is done by **`litellm.Router`**. Each key is a Router deployment in its own model group
+  (`key_1`, `key_2`, …, with `model_info.id` = the key id), and the Router is configured with ordered
+  fallbacks `key_1 → key_2 → … → key_N`, `num_retries=0`. Any provider failure — `RateLimitError`
+  (429 and quota/`RESOURCE_EXHAUSTED`), `InternalServerError`, `BadGatewayError`,
+  `ServiceUnavailableError`, timeouts, connection errors, even an invalid key — makes the Router fall
+  back to the next key. LiteLLM normalises every provider's errors into these types, so one code path
+  handles Gemini, Groq, OpenAI, etc.
+- The key that answered comes from the Router response (`_hidden_params["model_id"]`), and
+  `fallback_attempts` is its position in the chain (every key before it failed).
+- Router **cooldowns are disabled**: otherwise one request's failure (simulated or real) would
+  bench a key for other users' requests too.
+- `X-Simulate-Failure` is a LiteLLM callback (`CustomLogger.async_pre_call_check`). For the keys listed
+  in the header it raises the **same LiteLLM exception** a real provider error would
+  (`RateLimitError` for 429, `InternalServerError` for 500, …) right before the Router would call that
+  key, so the Router's own fallback logic handles it. Per-request state lives in a `ContextVar`, so it
+  never affects concurrent requests. It is ignored unless `ENABLE_FAILURE_SIMULATION=true`, and a
+  simulated key is never actually called.
 - If every key fails, the API returns `503 {"detail": "all providers unavailable"}` and nothing is
   written to history. A catch-all exception handler guarantees JSON errors, never stack traces.
 - API keys never leave the server: responses and logs only contain `key_1`, `key_2`, …
@@ -171,7 +176,7 @@ red "failover ×N" chip when keys failed first. Reload the page (new session) an
 message to see a cache hit. The **Failover demo** dropdown sends `X-Simulate-Failure` so failover and
 the 503 path can be shown without curl. Errors show as a red message in the chat.
 
-**Tests**: `make test` (or `cd backend && python -m pytest -q`) runs 38 tests with a fake provider
+**Tests**: `make test` (or `cd backend && python -m pytest -q`) runs 40 tests with a fake LiteLLM custom provider (so they exercise the real `litellm.Router`)
 covering the contract: health, validation (422), cache hit/miss rules, per-request tokens,
 multi-turn and session isolation, history/404, persistence across app restarts, simulated and real
 failover, the 503 path, and that keys never appear in responses.
@@ -204,4 +209,6 @@ failover, the 503 path, and that keys never appear in responses.
 - **Runtime-configurable frontend image** (API URL injected at container start).
 - **Hardening**: non-root backend container, Docker `HEALTHCHECK`, `/docs` disabled by default,
   generic JSON 500 handler, keys never logged.
+- **Keep-alive** (GitHub Actions, `.github/workflows/keepalive.yml`): pings `/health` every 10 minutes
+  so the free Render instance doesn't sleep and graders never hit a 30–60 s cold start.
 - **CI** (GitHub Actions): backend tests, frontend build and both Docker builds on every push.

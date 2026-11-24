@@ -2,10 +2,9 @@
 
 from __future__ import annotations
 
-from types import SimpleNamespace
-
 import litellm
 import pytest
+from litellm import CustomLLM
 from fastapi.testclient import TestClient
 
 from app.config import Settings
@@ -13,32 +12,43 @@ from app.llm import LLMGateway, parse_simulation_header
 from app.main import create_app
 
 
-class FakeProvider:
-    """Stands in for litellm.acompletion. Keys listed in `broken` raise real LiteLLM errors."""
+class FakeProvider(CustomLLM):
+    """A LiteLLM custom provider ("fakellm/..."), so tests exercise the real litellm.Router.
+    Keys listed in `broken` raise real LiteLLM errors."""
 
     def __init__(self):
+        super().__init__()
         self.calls: list[dict] = []
         self.broken: dict[str, Exception] = {}
 
-    async def __call__(self, **kwargs):
-        self.calls.append(kwargs)
-        if kwargs["api_key"] in self.broken:
-            raise self.broken[kwargs["api_key"]]
-        messages = kwargs["messages"]
+    async def acompletion(self, model, messages, api_key=None, **kwargs):
+        self.calls.append({"model": model, "messages": messages, "api_key": api_key})
+        if api_key in self.broken:
+            raise self.broken[api_key]
         last = messages[-1]["content"]
         # Echo something that proves history was sent.
         user_turns = [m["content"] for m in messages if m["role"] == "user"]
         reply = f"echo: {last} | turns={len(user_turns)} | first={user_turns[0]}"
         prompt_tokens = sum(len(m["content"].split()) + 4 for m in messages)
-        return SimpleNamespace(
-            choices=[SimpleNamespace(message=SimpleNamespace(content=reply))],
-            usage=SimpleNamespace(prompt_tokens=prompt_tokens, completion_tokens=len(reply.split())),
+        completion_tokens = len(reply.split())
+        return litellm.ModelResponse(
+            choices=[{"message": {"role": "assistant", "content": reply}}],
+            usage={
+                "prompt_tokens": prompt_tokens,
+                "completion_tokens": completion_tokens,
+                "total_tokens": prompt_tokens + completion_tokens,
+            },
         )
 
 
 @pytest.fixture
 def provider():
-    return FakeProvider()
+    fake = FakeProvider()
+    previous = litellm.custom_provider_map
+    litellm.custom_provider_map = [{"provider": "fakellm", "custom_handler": fake}]
+    litellm.utils.custom_llm_setup()
+    yield fake
+    litellm.custom_provider_map = previous
 
 
 @pytest.fixture
@@ -46,13 +56,13 @@ def make_client(tmp_path, provider):
     def _make(**overrides):
         settings = Settings(
             api_keys=["sk-one", "sk-two"],
-            default_model="gemini/gemini-test",
+            default_model="fakellm/gemini-test",
             database_path=str(tmp_path / "data" / "app.db"),
             enable_failure_simulation=True,
         )
         for k, v in overrides.items():
             setattr(settings, k, v)
-        gateway = LLMGateway(settings, completion_fn=provider)
+        gateway = LLMGateway(settings)
         return TestClient(create_app(settings, gateway))
 
     return _make
@@ -93,7 +103,7 @@ def test_chat_live_inference_contract(client):
     assert body["reply"]
     meta = body["metadata"]
     assert meta["resolution_source"] == "LIVE_INFERENCE"
-    assert meta["model"] == "gemini/gemini-test"
+    assert meta["model"] == "fakellm/gemini-test"
     assert isinstance(meta["latency_ms"], int)
     assert meta["input_tokens"] > 0 and meta["output_tokens"] > 0
     assert meta["key_id"] == "key_1"
@@ -298,9 +308,9 @@ def test_key_never_exposed(client, provider):
 
 
 def test_per_key_models(make_client, provider):
-    with make_client(key_models=["gemini/gemini-test", "groq/llama-test"]) as c:
+    with make_client(key_models=["fakellm/gemini-test", "fakellm/llama-test"]) as c:
         r = chat(c, "s-m", "hi", headers={"X-Simulate-Failure": "key_1=429"}).json()
-        assert r["metadata"]["model"] == "groq/llama-test"
+        assert r["metadata"]["model"] == "fakellm/llama-test"
 
 
 # ------------------------------------------------------------------ helpers
@@ -317,3 +327,22 @@ def test_unknown_route_is_json(client):
     r = client.get("/nope")
     assert r.status_code == 404
     assert r.headers["content-type"].startswith("application/json")
+
+
+# ------------------------------------------------------------------ router specifics
+def test_three_key_chain_and_no_cooldown_leak(make_client, provider):
+    with make_client(api_keys=["sk-one", "sk-two", "sk-three"]) as c:
+        r = chat(c, "s-3", "chain", headers={"X-Simulate-Failure": "key_1=429,key_2=500"}).json()
+        assert r["metadata"]["key_id"] == "key_3"
+        assert r["metadata"]["fallback_attempts"] == 2
+        # The simulated failures must not leak into the next request (no cooldowns).
+        r2 = chat(c, "s-3b", "next request").json()
+        assert r2["metadata"]["key_id"] == "key_1"
+        assert r2["metadata"]["fallback_attempts"] == 0
+
+
+def test_gateway_uses_litellm_router(client):
+    from litellm import Router
+
+    gw = client.app.state.gateway
+    assert isinstance(gw.router, Router)

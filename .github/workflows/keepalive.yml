@@ -1,0 +1,13 @@
+name: Keep backend awake
+# Render's free plan sleeps after ~15 min idle; ping /health every 10 minutes so the
+# live demo answers instantly. GitHub may delay scheduled runs by a few minutes.
+on:
+  schedule:
+    - cron: "*/10 * * * *"
+  workflow_dispatch:
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping backend health
+        run: curl -fsS --retry 3 --retry-delay 20 --max-time 90 https://lyftr-llm-chatbot-api.onrender.com/health
