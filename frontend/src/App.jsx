@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { API_URL, fetchHealth, newSessionId, sendChat } from "./api.js";
-import Aurora from "./components/reactbits/Aurora.jsx";
+import Grainient from "./components/reactbits/Grainient.jsx";
 import ClickSpark from "./components/reactbits/ClickSpark.jsx";
 import GradientText from "./components/reactbits/GradientText.jsx";
 import ShinyText from "./components/reactbits/ShinyText.jsx";
@@ -22,13 +22,13 @@ const SUGGESTIONS = [
   "Explain caching in one sentence.",
 ];
 
-const BRAND = ["#a78bfa", "#22d3ee", "#f472b6", "#facc15", "#a78bfa"];
+const BRAND = ["#fed7aa", "#f97316", "#fb7185", "#fcd34d", "#fed7aa"];
 
 const ACCENTS = {
-  green: "rgba(52, 211, 153, 0.45)",
-  cyan: "rgba(34, 211, 238, 0.45)",
-  pink: "rgba(244, 114, 182, 0.5)",
-  amber: "rgba(250, 204, 21, 0.45)",
+  green: "rgba(254, 215, 170, 0.4)",
+  cyan: "rgba(249, 115, 22, 0.45)",
+  pink: "rgba(251, 113, 133, 0.45)",
+  amber: "rgba(252, 211, 77, 0.45)",
 };
 
 function Panel({ children, accent = "cyan" }) {
@@ -155,21 +155,15 @@ export default function App() {
   return (
     <>
       <div className="bg" aria-hidden="true">
-        <Aurora
-          colorStops={["#8b5cf6", "#22d3ee", "#f472b6"]}
-          amplitude={1.3}
-          blend={0.6}
-          speed={0.7}
-          height={0.75}
-          layers={2}
-          glow={0.9}
-          brightness={1.25}
-          opacity={1}
-          mouseInteraction={false}
+        <Grainient
+          colors={["#120f17", "#2a0f0a", "#9a3412", "#f97316", "#fed7aa"]}
+          angle={55}
+          speed={0.6}
+          grainAmount={0.08}
         />
       </div>
 
-      <ClickSpark sparkColor="#f0abfc" sparkSize={11} sparkRadius={22} sparkCount={10} duration={450}>
+      <ClickSpark sparkColor="#fdba74" sparkSize={11} sparkRadius={22} sparkCount={10} duration={450}>
         <div className="layout">
           <aside className="sidebar">
             <div className="brand">
@@ -187,7 +181,7 @@ export default function App() {
                 <ShinyText
                   className="tagline"
                   text="never drops the baton"
-                  color="#c4b5fd"
+                  color="#fdba74"
                   shineColor="#ffffff"
                   speed={3}
                 />
