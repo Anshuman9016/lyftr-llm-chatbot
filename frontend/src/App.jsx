@@ -1,5 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { API_URL, fetchHealth, newSessionId, sendChat } from "./api.js";
+import Aurora from "./components/reactbits/Aurora.jsx";
+import ClickSpark from "./components/reactbits/ClickSpark.jsx";
+import GradientText from "./components/reactbits/GradientText.jsx";
+import ShinyText from "./components/reactbits/ShinyText.jsx";
+import SpotlightCard from "./components/reactbits/SpotlightCard.jsx";
+
+const APP_NAME = "Relay";
 
 const SIMULATION_OPTIONS = [
   { value: "", label: "Off (normal)" },
@@ -9,30 +16,59 @@ const SIMULATION_OPTIONS = [
   { value: "*=429", label: "all keys → 429 (expect 503)" },
 ];
 
+const SUGGESTIONS = [
+  "What is the capital of France?",
+  "My name is Anshuman. Remember it.",
+  "Explain caching in one sentence.",
+];
+
+const BRAND = ["#a78bfa", "#22d3ee", "#f472b6", "#facc15", "#a78bfa"];
+
+const ACCENTS = {
+  green: "rgba(52, 211, 153, 0.45)",
+  cyan: "rgba(34, 211, 238, 0.45)",
+  pink: "rgba(244, 114, 182, 0.5)",
+  amber: "rgba(250, 204, 21, 0.45)",
+};
+
+function Panel({ children, accent = "cyan" }) {
+  return (
+    <SpotlightCard
+      className={`panel panel--${accent}`}
+      spotlightColor={ACCENTS[accent]}
+      intensity={0.35}
+      spotlightSize={240}
+    >
+      {children}
+    </SpotlightCard>
+  );
+}
+
 function AssistantMessage({ msg }) {
   const m = msg.metadata;
   const cached = m.resolution_source === "LLM_CACHE";
   return (
     <div className="msg assistant" data-testid="assistant-message">
-      <div className="bubble">{msg.content}</div>
+      <div className={`bubble ${cached ? "cached" : ""}`}>{msg.content}</div>
       <div className="meta">
         <span className={`chip source ${cached ? "cache" : "live"}`} title="Resolution source">
+          {cached ? "⚡ " : "✦ "}
           <span data-testid="meta-source">{m.resolution_source}</span>
         </span>
-        <span className="chip" title="Model">
+        <span className="chip model" title="Model">
           <span data-testid="meta-model">{m.model}</span>
         </span>
-        <span className="chip" title="Server-measured latency">
+        <span className="chip latency" title="Server-measured latency">
           ⏱ <span data-testid="meta-latency">{m.latency_ms} ms</span>
         </span>
-        <span className="chip" title="Input (prompt) tokens for this request">
+        <span className="chip tin" title="Input (prompt) tokens for this request">
           in <span data-testid="meta-input-tokens">{m.input_tokens}</span>
         </span>
-        <span className="chip" title="Output (completion) tokens for this reply">
+        <span className="chip tout" title="Output (completion) tokens for this reply">
           out <span data-testid="meta-output-tokens">{m.output_tokens}</span>
         </span>
-        <span className="chip subtle" title="Key that answered (null on cache hit)">
-          key: {m.key_id ?? "—"}
+        <span className="chip key" title="Key that answered (null on cache hit)">
+          🔑 {m.key_id ?? "—"}
         </span>
         {m.fallback_attempts > 0 && (
           <span className="chip warn" title="Keys that failed before this one succeeded">
@@ -57,6 +93,7 @@ export default function App() {
   const inputRef = useRef(null);
 
   useEffect(() => {
+    document.title = `${APP_NAME} · resilient LLM chat`;
     fetchHealth()
       .then(setHealth)
       .catch(() => setHealth({ ok: false, body: null }));
@@ -71,11 +108,12 @@ export default function App() {
     return {
       replies: a.length,
       cacheHits: a.filter((m) => m.metadata.resolution_source === "LLM_CACHE").length,
+      failovers: a.filter((m) => m.metadata.fallback_attempts > 0).length,
     };
   }, [messages]);
 
-  async function send() {
-    const text = input.trim();
+  async function send(textOverride) {
+    const text = (textOverride ?? input).trim();
     if (!text || pending) return;
     setInput("");
     setMessages((prev) => [...prev, { role: "user", content: text }]);
@@ -115,114 +153,190 @@ export default function App() {
   const healthy = health?.ok;
 
   return (
-    <div className="layout">
-      <aside className="sidebar">
-        <h1>
-          Resilient <span>LLM</span> Chat
-        </h1>
-        <p className="tagline">Key failover · response caching · per-request tokens</p>
+    <>
+      <div className="bg" aria-hidden="true">
+        <Aurora
+          colorStops={["#8b5cf6", "#22d3ee", "#f472b6"]}
+          amplitude={1.3}
+          blend={0.6}
+          speed={0.7}
+          height={0.75}
+          layers={2}
+          glow={0.9}
+          brightness={1.25}
+          opacity={1}
+          mouseInteraction={false}
+        />
+      </div>
 
-        <section className="panel">
-          <div className="row">
-            <span className={`dot ${healthy ? "ok" : health ? "bad" : ""}`} />
-            <strong>
-              {health ? (healthy ? "Backend online" : "Backend unavailable") : "Checking backend…"}
-            </strong>
-          </div>
-          {health?.body && (
-            <div className="small">
-              {health.body.keys_configured} key(s) in pool · cache{" "}
-              {health.body.cache_enabled ? "on" : "off"}
-            </div>
-          )}
-          <div className="small mono wrap">{API_URL}</div>
-        </section>
-
-        <section className="panel">
-          <label htmlFor="sp">System prompt (optional)</label>
-          <textarea
-            id="sp"
-            data-testid="system-prompt-input"
-            rows={4}
-            placeholder="e.g. You are a concise travel guide."
-            value={systemPrompt}
-            onChange={(e) => setSystemPrompt(e.target.value)}
-          />
-          <div className="small">Sent with each message; applies to this session.</div>
-        </section>
-
-        <section className="panel">
-          <label htmlFor="sim">Failover demo (X-Simulate-Failure)</label>
-          <select id="sim" value={simulate} onChange={(e) => setSimulate(e.target.value)}>
-            {SIMULATION_OPTIONS.map((o) => (
-              <option key={o.value} value={o.value}>
-                {o.label}
-              </option>
-            ))}
-          </select>
-          <div className="small">Only honored when the backend enables failure simulation.</div>
-        </section>
-
-        <section className="panel">
-          <div className="small mono">session: {sessionId}</div>
-          <div className="small">
-            {totals.replies} replies · {totals.cacheHits} cache hit(s)
-          </div>
-          <button className="ghost" onClick={resetSession}>
-            New session
-          </button>
-        </section>
-      </aside>
-
-      <main className="chat">
-        <div className="messages">
-          {messages.length === 0 && (
-            <div className="empty">
-              <h2>Ask anything</h2>
-              <p>
-                Tip: send the same first message in a new session to see an{" "}
-                <code>LLM_CACHE</code> hit, or pick a failover option on the left.
-              </p>
-            </div>
-          )}
-          {messages.map((m, i) =>
-            m.role === "assistant" ? (
-              <AssistantMessage key={i} msg={m} />
-            ) : (
-              <div key={i} className={`msg ${m.role}`} role={m.role === "error" ? "alert" : undefined}>
-                <div className="bubble">{m.content}</div>
-              </div>
-            )
-          )}
-          {pending && (
-            <div className="msg assistant pending">
-              <div className="bubble typing">
+      <ClickSpark sparkColor="#f0abfc" sparkSize={11} sparkRadius={22} sparkCount={10} duration={450}>
+        <div className="layout">
+          <aside className="sidebar">
+            <div className="brand">
+              <div className="logo" aria-hidden="true">
                 <span />
                 <span />
                 <span />
               </div>
+              <div>
+                <h1>
+                  <GradientText colors={BRAND} animationSpeed={6}>
+                    {APP_NAME}
+                  </GradientText>
+                </h1>
+                <ShinyText
+                  className="tagline"
+                  text="never drops the baton"
+                  color="#c4b5fd"
+                  shineColor="#ffffff"
+                  speed={3}
+                />
+              </div>
             </div>
-          )}
-          <div ref={endRef} />
-        </div>
 
-        <div className="composer">
-          <textarea
-            ref={inputRef}
-            data-testid="chat-input"
-            rows={1}
-            placeholder="Type a message… (Enter to send, Shift+Enter for a new line)"
-            value={input}
-            maxLength={4000}
-            onChange={(e) => setInput(e.target.value)}
-            onKeyDown={onKeyDown}
-            autoFocus
-          />
-          <button data-testid="send-button" onClick={send} disabled={pending || !input.trim()}>
-            {pending ? "…" : "Send"}
-          </button>
+            <Panel accent="green">
+              <div className="row">
+                <span className={`dot ${healthy ? "ok" : health ? "bad" : ""}`} />
+                <strong>
+                  {health
+                    ? healthy
+                      ? "Backend online"
+                      : "Backend unavailable"
+                    : "Waking backend…"}
+                </strong>
+              </div>
+              {health?.body && (
+                <div className="pills">
+                  <span className="pill violet">{health.body.keys_configured} keys in pool</span>
+                  <span className={`pill ${health.body.cache_enabled ? "amber" : ""}`}>
+                    cache {health.body.cache_enabled ? "on" : "off"}
+                  </span>
+                </div>
+              )}
+              <div className="small mono wrap">{API_URL}</div>
+            </Panel>
+
+            <Panel accent="cyan">
+              <label htmlFor="sp">System prompt</label>
+              <textarea
+                id="sp"
+                data-testid="system-prompt-input"
+                rows={3}
+                placeholder="e.g. You are a concise travel guide."
+                value={systemPrompt}
+                onChange={(e) => setSystemPrompt(e.target.value)}
+              />
+              <div className="small">Optional · applies to this session.</div>
+            </Panel>
+
+            <Panel accent="pink">
+              <label htmlFor="sim">Failover demo</label>
+              <select id="sim" value={simulate} onChange={(e) => setSimulate(e.target.value)}>
+                {SIMULATION_OPTIONS.map((o) => (
+                  <option key={o.value} value={o.value}>
+                    {o.label}
+                  </option>
+                ))}
+              </select>
+              <div className="small">
+                Sends <code>X-Simulate-Failure</code> with each message.
+              </div>
+            </Panel>
+
+            <Panel accent="amber">
+              <div className="stats">
+                <div>
+                  <b>{totals.replies}</b>
+                  <span>replies</span>
+                </div>
+                <div>
+                  <b className="amber-t">{totals.cacheHits}</b>
+                  <span>cache hits</span>
+                </div>
+                <div>
+                  <b className="pink-t">{totals.failovers}</b>
+                  <span>failovers</span>
+                </div>
+              </div>
+              <div className="small mono">session {sessionId}</div>
+              <button className="ghost" onClick={resetSession}>
+                ✨ New session
+              </button>
+            </Panel>
+          </aside>
+
+          <main className="chat">
+            <div className="messages">
+              {messages.length === 0 && (
+                <div className="empty">
+                  <h2>
+                    <GradientText colors={BRAND} animationSpeed={5}>
+                      Ask anything.
+                    </GradientText>
+                  </h2>
+                  <p>
+                    Every reply shows where it came from, which key answered, latency and tokens.
+                    Repeat a first message in a new session to see an <b className="amber-t">LLM_CACHE</b>{" "}
+                    hit, or break a key with the failover demo.
+                  </p>
+                  <div className="suggestions">
+                    {SUGGESTIONS.map((s) => (
+                      <button key={s} className="suggestion" onClick={() => send(s)}>
+                        {s}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+              {messages.map((m, i) =>
+                m.role === "assistant" ? (
+                  <AssistantMessage key={i} msg={m} />
+                ) : (
+                  <div
+                    key={i}
+                    className={`msg ${m.role}`}
+                    role={m.role === "error" ? "alert" : undefined}
+                  >
+                    <div className="bubble">{m.content}</div>
+                  </div>
+                )
+              )}
+              {pending && (
+                <div className="msg assistant pending">
+                  <div className="bubble typing">
+                    <span />
+                    <span />
+                    <span />
+                  </div>
+                </div>
+              )}
+              <div ref={endRef} />
+            </div>
+
+            <div className="composer">
+              <textarea
+                ref={inputRef}
+                data-testid="chat-input"
+                rows={1}
+                placeholder="Message Relay…  (Enter to send · Shift+Enter for a new line)"
+                value={input}
+                maxLength={4000}
+                onChange={(e) => setInput(e.target.value)}
+                onKeyDown={onKeyDown}
+                autoFocus
+              />
+              <button
+                data-testid="send-button"
+                className="send"
+                onClick={() => send()}
+                disabled={pending || !input.trim()}
+              >
+                {pending ? "…" : "Send ➤"}
+              </button>
+            </div>
+          </main>
         </div>
-      </main>
-    </div>
+      </ClickSpark>
+    </>
   );
 }

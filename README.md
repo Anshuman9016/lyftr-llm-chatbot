@@ -1,4 +1,6 @@
-# LLM Chatbot with Key Failover and Response Caching
+# Relay: LLM chatbot with key failover and response caching
+
+*Relay never drops the baton: when one API key fails, the next one picks up the request.*
 
 React chat UI → FastAPI backend → LiteLLM gateway (key pool + response cache) → Gemini / Groq.
 Session history lives in SQLite. Everything runs on free tiers.
@@ -183,6 +185,12 @@ failover, the 503 path, and that keys never appear in responses.
 
 ## 6. Bonus features
 
+- **Animated UI with [React Bits](https://github.com/DavidHDev/react-bits)**: an `Aurora` WebGL
+  background, `GradientText` / `ShinyText` branding, glowing `SpotlightCard` panels and `ClickSpark`
+  click effects, in a vivid violet / cyan / pink palette. Each metadata chip has its own colour
+  (green = live, gold = cache, pink = failover), so the source of a reply is readable at a glance.
+  The components are copied, unmodified, into `frontend/src/components/reactbits/` and add no npm dependencies.
+- **Suggested prompts and live counters** (replies, cache hits, failovers) to make the demo quick.
 - **Failover demo control in the UI**: a dropdown that sends `X-Simulate-Failure`, so failover is
   visible in the app itself (handy for the demo video).
 - **Cross-provider key pool** (`LLM_KEY_MODELS`): mix Gemini and Groq keys so one provider's outage
