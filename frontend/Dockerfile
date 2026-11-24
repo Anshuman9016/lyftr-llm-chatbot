@@ -11,6 +11,8 @@ FROM nginx:1.27-alpine AS runtime
 ENV API_URL=http://localhost:8000
 COPY nginx.conf /etc/nginx/conf.d/default.conf
 COPY docker-entrypoint.d/40-runtime-config.sh /docker-entrypoint.d/40-runtime-config.sh
-RUN chmod +x /docker-entrypoint.d/40-runtime-config.sh
+# Strip Windows line endings (CRLF) in case the repo was checked out on Windows
+RUN sed -i 's/\r$//' /docker-entrypoint.d/40-runtime-config.sh \
+ && chmod +x /docker-entrypoint.d/40-runtime-config.sh
 COPY --from=builder /build/dist /usr/share/nginx/html
 EXPOSE 3000
