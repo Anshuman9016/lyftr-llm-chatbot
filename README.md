@@ -21,9 +21,9 @@ Session history lives in SQLite. Everything runs on free tiers.
 
 | Tier | URL |
 |---|---|
-| Frontend | `https://<your-app>.vercel.app` |
-| Backend | `https://<your-backend>.onrender.com` (try `/health`) |
-| Repository | `https://github.com/<you>/<repo>` |
+| Frontend | https://lyftr-llm-chatbot-pied.vercel.app |
+| Backend | https://lyftr-llm-chatbot-api.onrender.com (try [`/health`](https://lyftr-llm-chatbot-api.onrender.com/health)) |
+| Repository | https://github.com/Anshuman9016/lyftr-llm-chatbot |
 
 > The backend runs on Render's free plan, which sleeps after ~15 min idle. The first request after
 > a sleep can take ~30–60 s; open `/health` once before testing.
@@ -68,8 +68,8 @@ VITE_API_URL=http://localhost:8000 npm run dev         # http://localhost:3000
 | Variable | Default | Meaning |
 |---|---|---|
 | `LLM_API_KEYS` | – | Comma-separated key pool (≥ 2). Ids are `key_1`, `key_2`, … in order |
-| `LLM_MODEL` | `gemini/gemini-2.5-flash` | LiteLLM model used by every key |
-| `LLM_KEY_MODELS` | empty | Optional per-key model override, e.g. `gemini/gemini-2.5-flash,groq/llama-3.1-8b-instant` |
+| `LLM_MODEL` | `gemini/gemini-3.5-flash-lite` | LiteLLM model used by every key |
+| `LLM_KEY_MODELS` | empty | Optional per-key model override, e.g. `gemini/gemini-3.5-flash-lite,groq/llama-3.1-8b-instant` |
 | `DATABASE_URL` | `sqlite:///./app.db` | SQLite location (`sqlite:////data/app.db` in Docker) |
 | `ALLOWED_ORIGINS` | `*` | Comma-separated CORS origins |
 | `ENABLE_FAILURE_SIMULATION` | `false` | `true` enables the `X-Simulate-Failure` header |

@@ -35,7 +35,7 @@ DEFAULT_SYSTEM_PROMPT = (
 class Settings:
     api_keys: list[str] = field(default_factory=list)
     key_models: list[str] = field(default_factory=list)
-    default_model: str = "gemini/gemini-2.5-flash"
+    default_model: str = "gemini/gemini-3.5-flash-lite"
     database_path: str = "./app.db"
     allowed_origins: list[str] = field(default_factory=lambda: ["*"])
     enable_failure_simulation: bool = False
@@ -53,7 +53,7 @@ class Settings:
         return cls(
             api_keys=_split(env.get("LLM_API_KEYS")),
             key_models=_split(env.get("LLM_KEY_MODELS")),
-            default_model=env.get("LLM_MODEL", "gemini/gemini-2.5-flash").strip(),
+            default_model=env.get("LLM_MODEL", "gemini/gemini-3.5-flash-lite").strip(),
             database_path=sqlite_path_from_url(
                 env.get("DATABASE_URL", "sqlite:///./app.db")
             ),
